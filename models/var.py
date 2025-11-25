@@ -59,7 +59,7 @@ class VAR(nn.Module):
         self.num_classes = num_classes
         self.uniform_prob = torch.full((1, num_classes), fill_value=1.0 / num_classes, dtype=torch.float32, device=dist.get_device())
         self.class_emb = nn.Embedding(self.num_classes + 1, self.C)
-        nn.init.trunc_normal_(self.class_emb.weight.data, mean=0, std=init_std)
+        nn.init.trunc_normal_(self.class_emb.weight.data, mean=0, std=init_std) # truncated normal initialization
         self.pos_start = nn.Parameter(torch.empty(1, self.first_l, self.C))
         nn.init.trunc_normal_(self.pos_start.data, mean=0, std=init_std)
         
@@ -79,7 +79,7 @@ class VAR(nn.Module):
         # 4. backbone blocks
         self.shared_ada_lin = nn.Sequential(nn.SiLU(inplace=False), SharedAdaLin(self.D, 6*self.C)) if shared_aln else nn.Identity()
         
-        norm_layer = partial(nn.LayerNorm, eps=norm_eps)
+        norm_layer = partial(nn.LayerNorm, eps=norm_eps) # a constructor for LayerNorm
         self.drop_path_rate = drop_path_rate
         dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depth)]  # stochastic depth decay rule (linearly increasing)
         self.blocks = nn.ModuleList([
@@ -154,6 +154,7 @@ class VAR(nn.Module):
         next_token_map = sos.unsqueeze(1).expand(2 * B, self.first_l, -1) + self.pos_start.expand(2 * B, self.first_l, -1) + lvl_pos[:, :self.first_l]
         
         cur_L = 0
+        # initialize f_hat
         f_hat = sos.new_zeros(B, self.Cvae, self.patch_nums[-1], self.patch_nums[-1])
         
         for b in self.blocks: b.attn.kv_caching(True)
