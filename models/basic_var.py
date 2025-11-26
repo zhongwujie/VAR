@@ -140,7 +140,7 @@ class AdaLNSelfAttn(nn.Module):
         
         self.ln_wo_grad = norm_layer(embed_dim, elementwise_affine=False)
         self.shared_aln = shared_aln
-        if self.shared_aln:
+        if self.shared_aln: # False for default VAR
             self.ada_gss = nn.Parameter(torch.randn(1, 1, 6, embed_dim) / embed_dim**0.5)
         else:
             lin = nn.Linear(cond_dim, 6*embed_dim)
@@ -150,7 +150,7 @@ class AdaLNSelfAttn(nn.Module):
     
     # NOTE: attn_bias is None during inference because kv cache is enabled
     def forward(self, x, cond_BD, attn_bias):   # C: embed_dim, D: cond_dim
-        if self.shared_aln:
+        if self.shared_aln: # False for default VAR
             gamma1, gamma2, scale1, scale2, shift1, shift2 = (self.ada_gss + cond_BD).unbind(2) # 116C + B16C =unbind(2)=> 6 B1C
         else:
             gamma1, gamma2, scale1, scale2, shift1, shift2 = self.ada_lin(cond_BD).view(-1, 1, 6, self.C).unbind(2)
