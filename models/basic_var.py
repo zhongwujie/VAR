@@ -33,6 +33,7 @@ except ImportError:
 class FFN(nn.Module):
     def __init__(self, in_features, hidden_features=None, out_features=None, drop=0., fused_if_available=True):
         super().__init__()
+        # None, because we don't have flash-attention
         self.fused_mlp_func = fused_mlp_func if fused_if_available else None
         out_features = out_features or in_features
         hidden_features = hidden_features or in_features
@@ -64,7 +65,7 @@ class SelfAttention(nn.Module):
         assert embed_dim % num_heads == 0
         self.block_idx, self.num_heads, self.head_dim = block_idx, num_heads, embed_dim // num_heads  # =64
         self.attn_l2_norm = attn_l2_norm
-        if self.attn_l2_norm:
+        if self.attn_l2_norm: # True for default VAR
             self.scale = 1
             self.scale_mul_1H11 = nn.Parameter(torch.full(size=(1, self.num_heads, 1, 1), fill_value=4.0).log(), requires_grad=True)
             self.max_scale_mul = torch.log(torch.tensor(100)).item()
@@ -76,8 +77,10 @@ class SelfAttention(nn.Module):
         self.register_buffer('zero_k_bias', torch.zeros(embed_dim))
         
         self.proj = nn.Linear(embed_dim, embed_dim)
+        # The dropout will not be used during inference
         self.proj_drop = nn.Dropout(proj_drop, inplace=True) if proj_drop > 0 else nn.Identity()
         self.attn_drop: float = attn_drop
+        # False, we don't use flash attention and xformers
         self.using_flash = flash_if_available and flash_attn_func is not None
         self.using_xform = flash_if_available and memory_efficient_attention is not None
         
@@ -98,7 +101,7 @@ class SelfAttention(nn.Module):
         if using_flash or self.using_xform: q, k, v = qkv.unbind(dim=2); dim_cat = 1   # q or k or v: BLHc
         else: q, k, v = qkv.permute(2, 0, 3, 1, 4).unbind(dim=0); dim_cat = 2               # q or k or v: BHLc
         
-        if self.attn_l2_norm:
+        if self.attn_l2_norm: # True for default VAR
             scale_mul = self.scale_mul_1H11.clamp_max(self.max_scale_mul).exp()
             if using_flash or self.using_xform: scale_mul = scale_mul.transpose(1, 2)  # 1H11 to 11H1
             q = F.normalize(q, dim=-1).mul(scale_mul)
@@ -109,7 +112,7 @@ class SelfAttention(nn.Module):
             else: k = self.cached_k = torch.cat((self.cached_k, k), dim=dim_cat); v = self.cached_v = torch.cat((self.cached_v, v), dim=dim_cat)
         
         dropout_p = self.attn_drop if self.training else 0.0
-        if using_flash:
+        if using_flash: # False
             oup = flash_attn_func(q.to(dtype=main_type), k.to(dtype=main_type), v.to(dtype=main_type), dropout_p=dropout_p, softmax_scale=self.scale).view(B, L, C)
         elif self.using_xform:
             oup = memory_efficient_attention(q.to(dtype=main_type), k.to(dtype=main_type), v.to(dtype=main_type), attn_bias=None if attn_bias is None else attn_bias.to(dtype=main_type).expand(B, self.num_heads, -1, -1), p=dropout_p, scale=self.scale).view(B, L, C)
