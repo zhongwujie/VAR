@@ -106,7 +106,7 @@ class VAR(nn.Module):
         #    it won't be used in inference, since kv cache is enabled
         d: torch.Tensor = torch.cat([torch.full((pn*pn,), i) for i, pn in enumerate(self.patch_nums)]).view(1, self.L, 1)
         dT = d.transpose(1, 2)    # dT: 11L
-        lvl_1L = dT[:, 0].contiguous()
+        lvl_1L = dT[:, 0].contiguous() # (1, L)
         self.register_buffer('lvl_1L', lvl_1L)
         attn_bias_for_masking = torch.where(d >= dT, 0., -torch.inf).reshape(1, 1, self.L, self.L)
         self.register_buffer('attn_bias_for_masking', attn_bias_for_masking.contiguous())
@@ -151,7 +151,7 @@ class VAR(nn.Module):
         # dimensions: (2*B, C)
         sos = cond_BD = self.class_emb(torch.cat((label_B, torch.full_like(label_B, fill_value=self.num_classes)), dim=0))
         
-        lvl_pos = self.lvl_embed(self.lvl_1L) + self.pos_1LC
+        lvl_pos = self.lvl_embed(self.lvl_1L) + self.pos_1LC # (1, L, C)
         next_token_map = sos.unsqueeze(1).expand(2 * B, self.first_l, -1) + self.pos_start.expand(2 * B, self.first_l, -1) + lvl_pos[:, :self.first_l]
         
         cur_L = 0
@@ -193,15 +193,17 @@ class VAR(nn.Module):
     
     def forward(self, label_B: torch.LongTensor, x_BLCv_wo_first_l: torch.Tensor) -> torch.Tensor:  # returns logits_BLV
         """
-        :param label_B: label_B
+        :param label_B: label_B shape (B,)
         :param x_BLCv_wo_first_l: teacher forcing input (B, self.L-self.first_l, self.Cvae)
         :return: logits BLV, V is vocab_size
         """
         bg, ed = self.begin_ends[self.prog_si] if self.prog_si >= 0 else (0, self.L)
         B = x_BLCv_wo_first_l.shape[0]
-        with torch.cuda.amp.autocast(enabled=False):
+        with torch.cuda.amp.autocast(enabled=False): # train in float32 for stability
             label_B = torch.where(torch.rand(B, device=label_B.device) < self.cond_drop_rate, self.num_classes, label_B)
+            # sos: start of sequence (B, C)
             sos = cond_BD = self.class_emb(label_B)
+            # (B, 1, C)
             sos = sos.unsqueeze(1).expand(B, self.first_l, -1) + self.pos_start.expand(B, self.first_l, -1)
             
             if self.prog_si == 0: x_BLC = sos
