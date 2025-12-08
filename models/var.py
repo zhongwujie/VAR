@@ -210,8 +210,8 @@ class VAR(nn.Module):
             else: x_BLC = torch.cat((sos, self.word_embed(x_BLCv_wo_first_l.float())), dim=1)
             x_BLC += self.lvl_embed(self.lvl_1L[:, :ed].expand(B, -1)) + self.pos_1LC[:, :ed] # lvl: BLC;  pos: 1LC
         
-        attn_bias = self.attn_bias_for_masking[:, :, :ed, :ed]
-        cond_BD_or_gss = self.shared_ada_lin(cond_BD)
+        attn_bias = self.attn_bias_for_masking[:, :, :ed, :ed] # (1, 1, L, L)
+        cond_BD_or_gss = self.shared_ada_lin(cond_BD) # gss: gamma, scale and shift
         
         # hack: get the dtype if mixed precision is used
         temp = x_BLC.new_ones(8, 8)
@@ -227,7 +227,7 @@ class VAR(nn.Module):
         x_BLC = self.get_logits(x_BLC.float(), cond_BD)
         
         if self.prog_si == 0:
-            if isinstance(self.word_embed, nn.Linear):
+            if isinstance(self.word_embed, nn.Linear): # true
                 x_BLC[0, 0, 0] += self.word_embed.weight[0, 0] * 0 + self.word_embed.bias[0] * 0
             else:
                 s = 0
