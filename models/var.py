@@ -228,6 +228,7 @@ class VAR(nn.Module):
         
         if self.prog_si == 0:
             if isinstance(self.word_embed, nn.Linear): # true
+                # hack engineering to ensure the grad can flow when prog_si == 0
                 x_BLC[0, 0, 0] += self.word_embed.weight[0, 0] * 0 + self.word_embed.bias[0] * 0
             else:
                 s = 0
